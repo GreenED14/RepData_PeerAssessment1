@@ -1,0 +1,164 @@
+---
+title: "ProjectReport"
+author: "Chinmay Sharma"
+date: "17 February 2019"
+output:
+  html_document: 
+    fig_caption: yes
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+This report is about extracting data and generating plots on actively monitored data collected from users wearing devices such as Fitbit, Nuke Fuelband or JawboneUp or any other.
+
+## Extracting & Looking at Data 
+The data for the following study is available publicly [here](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip).
+After downloading and the extracting the .csv file in the RStudio's working directory, ```read.csv()``` can be used. Further, we can use ```head()``` command to have a look at the data, and ```str()``` to get dimensions, data type etc.
+```{r}
+studyData<-read.csv('activity.csv')
+head(studyData)
+str(studyData)
+```
+The variables included in this dataset are:
+
+- **steps**: Number of steps taking in a 5-minute interval (missing values are coded as NA)
+
+- **date**: The date on which the measurement was taken in YYYY-MM-DD format
+
+- **interval**: Identifier for the 5-minute interval in which measurement was taken
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
+
+## What is mean total number of steps taken per day?
+ *For this part of the assignment, you can ignore the missing values in the dataset.*
+
+1. *Make a histogram of the total number of steps taken each day*
+
+2. *Calculate and report the mean and median total number of steps taken per day*
+
+For this case, we would need to first aggregate the total steps corresponding to every date, for which the function ```aggregate()``` is used. Then the function ```barplot()``` is used to plot the details. ```aggregate()``` can also be used to compute mean and median steps per day.
+
+
+```{r}
+totalSteps<-aggregate(steps~date,studyData,sum)
+barplot(height = totalSteps$steps,names.arg = totalSteps$date,xlab="day",ylab = "total steps",main="total steps per day")
+meanSteps<-aggregate(steps~date,studyData,mean)
+meanSteps
+medianSteps<-aggregate(steps~date,studyData,median)
+medianSteps
+```
+
+Here is the interpretation of the above results.```meanSteps``` denote the mean number of steps taken, while ```medianSteps``` denotes the median for the same.It is 0 because there are more entries with '0' in the data for a particular day. To obtain the meadian of the instances only when the subject is walking, the data can be modified.
+```{r}
+medianSteps<-aggregate(steps~date,studyData[studyData$steps>0,],median)
+medianSteps
+```
+
+##What is the average daily activity pattern?
+*1. Make a time series plot (i.e. ```type = "l"```) of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)*
+
+*2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?*
+
+For the first item, we need to aggregate the steps by interval column.
+
+```{r}
+StepsPerInterval<-aggregate(steps~interval,studyData,mean)
+plot(StepsPerInterval$interval,StepsPerInterval$steps,type = "l",xlab = "Intervals",ylab = "steps averaged over days",main="User daily activity averaged")
+lines(StepsPerInterval$interval,StepsPerInterval$steps,type = "l")
+```
+
+It is clear that, if averaged across all days, the user had maximum number of steps between the interval of 500 and 1000. To get the exact interval in which it happened, we use ```which.max()```
+
+```{r}
+StepsPerInterval$interval[which.max(StepsPerInterval$steps)]
+```
+
+## Imputing Missing values in the dataset
+As we observed while using ```head()``` and ```str()``` there are missing values in the dataset. Let's get a count.
+
+```{r}
+sum(is.na(studyData$steps))
+mean(is.na(studyData$steps))
+```
+
+So we have 2304 missing values, roughly around 13% of the data. In order to replace these values with finite data, we will have to impute this data with suitable values such that the summary statistics aren't much affected. Below piece of code shows for which days the data is missing, and how many such readings are there.
+
+```{r}
+table(studyData[is.na(studyData$steps),]$date)
+```
+
+We see that there are no days when the data is only partially available. Rather, the data was unavailable for a complete day. This means the user had the device worn-on or worn off for the whole day. In order to fill the data for these 'worn-off'days, we can use the number of steps averaged over the 'worn-on' days, on a given interval. 
+
+```{r}
+missingDates<-unique(as.character(studyData[is.na(studyData$steps),]$date))
+#creating a copy of original data
+OldstudyData<-studyData
+for (i in 1:length(missingDates)) {
+ #studyData[studyData$date==as.character(missingDates[i]),]$steps<-StepsPerInterval
+  studyData$steps<-replace(studyData$steps,which(studyData$date==as.character(missingDates[i])),StepsPerInterval$steps)
+}
+head(studyData)
+sum(is.na(studyData$steps))
+mean(is.na(studyData$steps))
+```
+
+We see that all the missing values are replaced.Now we replot the histogram of total number of steps for each day.
+
+```{r}
+totalSteps<-aggregate(steps~date,OldstudyData,sum)
+barplot(height = totalSteps$steps,names.arg = totalSteps$date,xlab="day",ylab = "total steps",main="total steps per day")
+NewtotalSteps<-aggregate(steps~date,studyData,sum)
+barplot(height = NewtotalSteps$steps,names.arg = NewtotalSteps$date,xlab="day",ylab = "total steps",main="total steps per day")
+```
+
+So we basically have put up a fixed height bar for each of those missing days.
+Now let's compare the mean and the median of original and modified data
+```{r}
+meanSteps<-aggregate(steps~date,OldstudyData,mean)
+meanSteps
+NewmeanSteps<-aggregate(steps~date,studyData,mean)
+NewmeanSteps
+medianSteps<-aggregate(steps~date,OldstudyData,median)
+medianSteps
+NewmedianSteps<-aggregate(steps~date,studyData,median)
+NewmedianSteps
+```
+
+Not suprisingly, it only affected the days for which the data was added.
+
+##Are there differences in activity patterns between weekdays and weekends?
+In this section, we will take a look a activity pattern in weekdays and weekends(i.e.,Saturday and Sunday).
+Let's create an extra column,denoting the day of the week for each date. This can be done using the function ```mutate()``` from the *dplyr* package. Days of the week can be assigned using ```weekday()``` function.Converting *weekday* column to factor variable, so that panel plots can be made.
+
+```{r echo=TRUE, results="hide"}
+library(dplyr)
+```
+
+```{r}
+studyData<-mutate(studyData,weekday=factor(weekdays(as.Date(studyData$date)),levels = c("Monday","Tuesday","Wednesday","Thrusday","Friday","Saturday","Sunday"),labels = c("Weekday","Weekday","Weekday","Weekday","Weekday","Weekend","Weekend")))
+head(studyData)
+```
+
+Next we can make panel plots to differentiate user activity in weekdays and weekends. The *ggplot2* plotting package can be used for this purpose.
+
+```{r}
+library(ggplot2)
+StepsPerIntervalWeekday<-aggregate(steps~interval,subset(studyData,studyData$weekday=="Weekday"),mean)
+StepsPerIntervalWeekday<-mutate(StepsPerIntervalWeekday,weekDay=factor(rep("Weekday",288),levels=c("Weekday","Weekend")))
+StepsPerIntervalWeekend<-aggregate(steps~interval,subset(studyData,studyData$weekday=="Weekend"),mean)
+StepsPerIntervalWeekend<-mutate(StepsPerIntervalWeekend,weekDay=factor(rep("Weekend",288),levels=c("Weekday","Weekend")))
+StepsPerInterval<-rbind(StepsPerIntervalWeekday,StepsPerIntervalWeekend)
+qplot(x=interval,y=steps,data=StepsPerInterval,facets= weekDay~.,xlab = "Intervals",ylab = "steps averaged over days",main="User daily activity averaged")+geom_line()
+```
+
+The data was first aggregated, separately for weekdays(*StepsPerIntervalWeekday*) and weekends(*StepsPerIntervalWeekend*).Then the two formed datasets had another column *weekDay* added to them using ```mutate()``` function from the *dplyr* package. *StepsPerIntervalWeekday* and *StepsPerIntervalWeekend* were row binded(stacked one below the other) using ```rbind()```, to create *StepsPerInterval* for which the *weekDay* column is a factor with two levels: *"Weekday"* and *"Weekend"*. This bilevel property of the factor can now be exploited in ```qplot()```(*ggplot2* package) using the ```facets``` option.
+
+
+Looking at the plot, it can be concluded that while the user is less active during the first 1000 minutes on any weekend day when compared to weekdays, he/she is more active(on average) during the next 1000 minutes(i.e., 1000 to 2000 minutes).
+
+##Conclusion
+The data on user activity on number of steps taken every 5 minutes as recorded by a wearable device was analysed. We looked at the user's activity variation over the days, by looking at the mean and median of total steps taken. We also looked at the variation over the interval averaged for all the days, and found that the device recorded maximum activity at t = 835 minutes. We also found 2304 missing values in the dataset which were imputed with the average data. Since the data was missing a whole day, it didn't affect the mean and median steps per day, except for those days where data was imputed. Finally, we compared the user activity between weekdays and weekends, and found that for the first 1000 minutes, the user is more active on a weekday, and for the next 1000 minutes the user shows more activity in the weekend.
